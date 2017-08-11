@@ -25,7 +25,8 @@ var HTMLInfoWindow = function() {
     contentFrame.style.display = "block";
     contentFrame.style.position = "relative";
     contentFrame.style.backgroundColor = "white";
-    contentFrame.style.border = "1px solid rgb(204, 204, 204)";
+    // contentFrame.style.border = "1px solid rgba(204, 204, 204, 0)";
+    contentFrame.style.border = "none";
     contentFrame.style.left = "0px";
     contentFrame.style.right = "0px";
     contentFrame.style.zIndex = "1";  // In order to set higher depth than the map div certainly
@@ -43,9 +44,10 @@ var HTMLInfoWindow = function() {
     tailLeft.style.height = "0px";
     tailLeft.style.width = "0px";
     tailLeft.style.marginLeft = "-15px";
-    tailLeft.style.borderWidth = "15px 15px 0px";
-    tailLeft.style.borderColor = "rgb(204, 204, 204) transparent transparent";
-    tailLeft.style.borderStyle = "solid";
+    // tailLeft.style.borderWidth = "15px 15px 0px";
+    // tailLeft.style.borderColor = "rgb(204, 204, 204) transparent transparent";
+    // tailLeft.style.borderStyle = "solid";
+    tailLeft.style.border = "none";
     tailFrame.appendChild(tailLeft);
 
     var tailRight = document.createElement("div");
@@ -54,11 +56,12 @@ var HTMLInfoWindow = function() {
     tailRight.style.height = "0px";
     tailRight.style.width = "0px";
     tailRight.style.marginLeft = "-14px";
-    tailRight.style.borderTopWidth = "14px";
-    tailRight.style.borderLeftWidth = "14px";
-    tailRight.style.borderRightWidth = "14px";
-    tailRight.style.borderColor = "rgb(255, 255, 255) transparent transparent";
-    tailRight.style.borderStyle = "solid";
+    // tailRight.style.borderTopWidth = "14px";
+    // tailRight.style.borderLeftWidth = "14px";
+    // tailRight.style.borderRightWidth = "14px";
+    // tailRight.style.borderColor = "rgb(255, 255, 255) transparent transparent";
+    // tailRight.style.borderStyle = "solid";
+    tailRight.style.border = "none";
     tailFrame.appendChild(tailRight);
 
     var calculate = function() {
@@ -247,6 +250,7 @@ HTMLInfoWindow.prototype.open = function(marker) {
 };
 
 HTMLInfoWindow.prototype.setBackgroundColor = function(backgroundColor) {
+  this.get("frame").children[0].style.border = "none";
   this.get("frame").children[0].style.backgroundColor = backgroundColor;
   this.get("frame").children[1].children[0].style.borderColor = backgroundColor + " rgba(0,0,0,0) rgba(0,0,0,0)";
   this.get("frame").children[1].children[1].style.borderColor = backgroundColor + " rgba(0,0,0,0) rgba(0,0,0,0)";
