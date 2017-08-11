@@ -79,7 +79,7 @@ var HTMLInfoWindow = function() {
 
       var content = self.get("content");
       if (typeof content === "string") {
-          contentBox.style.whiteSpace="pre-wrap";
+        //   contentBox.style.whiteSpace="pre-wrap";
           contentBox.innerHTML = content;
       } else {
           if (!content) {
@@ -97,7 +97,7 @@ var HTMLInfoWindow = function() {
       }
 
       // Adjust the HTMLInfoWindow size
-      var contentsWidth = contentBox.offsetWidth; // padding 5px x 2
+      var contentsWidth = contentBox.offsetWidth;
       self.set("contentsWidth", contentsWidth);
       var contentsHeight = contentBox.offsetHeight;
       self.set("contentsHeight", contentsHeight );
