@@ -19,7 +19,7 @@ var HTMLInfoWindow = function() {
 
     var contentBox = document.createElement("div");
     contentBox.style.display = "inline-block";
-    contentBox.style.padding = "5px";
+    // contentBox.style.padding = "5px";
 
     var contentFrame = document.createElement("div");
     contentFrame.style.display = "block";
@@ -97,14 +97,14 @@ var HTMLInfoWindow = function() {
       }
 
       // Adjust the HTMLInfoWindow size
-      var contentsWidth = contentBox.offsetWidth + 10; // padding 5px x 2
+      var contentsWidth = contentBox.offsetWidth; // padding 5px x 2
       self.set("contentsWidth", contentsWidth);
       var contentsHeight = contentBox.offsetHeight;
       self.set("contentsHeight", contentsHeight );
       contentFrame.style.width = contentsWidth + "px";
       contentFrame.style.height = contentsHeight + "px";
       frame.style.width = contentsWidth  + "px";
-      frame.style.height = (contentsHeight+ 15) + "px";
+      frame.style.height = contentsHeight + "px";
 
       var infoOffset = {
         y : 0.25,
