@@ -11,6 +11,7 @@ import android.content.IntentSender.SendIntentException;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.location.Location;
 import android.location.LocationManager;
@@ -52,9 +53,12 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -72,7 +76,7 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
   private GoogleApiClient googleApiClient = null;
   public boolean initialized = false;
   public PluginManager pluginManager;
-  private String CURRENT_URL;
+  public static String CURRENT_URL;
   public static final HashMap<String, String> semaphore = new HashMap<String, String>();
 
   @SuppressLint("NewApi") @Override
@@ -93,6 +97,7 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
     cordova.getActivity().runOnUiThread(new Runnable() {
       @SuppressLint("NewApi")
       public void run() {
+        CURRENT_URL = webView.getUrl();
 
         // Enable this, webView makes draw cache on the Android action bar issue.
         //View view = webView.getView();
@@ -189,6 +194,7 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
         webView.getView().setBackgroundColor(Color.TRANSPARENT);
         webView.getView().setOverScrollMode(View.OVER_SCROLL_NEVER);
         mPluginLayout = new MyPluginLayout(webView, activity);
+        mPluginLayout.isSuspended = true;
 
 
         // Check the API key
@@ -238,6 +244,22 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
   }
 
   @Override
+  public boolean onOverrideUrlLoading(String url) {
+    mPluginLayout.isSuspended = true;
+    /*
+    this.activity.runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+        webView.loadUrl("javascript:if(window.cordova){cordova.fireDocumentEvent('plugin_url_changed', {});}");
+      }
+    });
+    */
+    CURRENT_URL = url;
+    return false;
+  }
+
+
+  @Override
   public void onScrollChanged() {
     if (mPluginLayout == null) {
       return;
@@ -252,7 +274,7 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
   @Override
   public boolean execute(final String action, final JSONArray args, final CallbackContext callbackContext) throws JSONException {
 
-    cordova.getThreadPool().execute(new Runnable() {
+    cordova.getThreadPool().submit(new Runnable() {
       @Override
       public void run() {
         try {
@@ -288,20 +310,15 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
   }
 
   public void resumeResizeTimer(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
-    cordova.getActivity().runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-        mPluginLayout.pauseResize = false;
+    if (mPluginLayout.isWaiting) {
+      mPluginLayout.pauseResize = false;
+      synchronized (mPluginLayout.timerLock) {
+        mPluginLayout.timerLock.notify();
       }
-    });
+    }
   }
   public void pauseResizeTimer(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
-    cordova.getActivity().runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-        mPluginLayout.pauseResize = true;
-      }
-    });
+    mPluginLayout.pauseResize = true;
   }
   public void backHistory(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
     cordova.getActivity().runOnUiThread(new Runnable() {
@@ -316,32 +333,8 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
   }
 
 
-  public void requestPermissions(CordovaPlugin plugin, int requestCode, String[] permissions) {
-
-    try {
-      Method requestPermission = CordovaInterface.class.getDeclaredMethod(
-          "requestPermissions", CordovaPlugin.class, int.class, String[].class);
-
-      // If there is no exception, then this is cordova-android 5.0.0+
-      requestPermission.invoke(plugin.cordova, plugin, requestCode, permissions);
-    } catch (Exception e) {
-      e.printStackTrace();
-    }
-  }
-
   public void onRequestPermissionResult(int requestCode, String[] permissions,
                                         int[] grantResults) throws JSONException {
-    boolean didPermissionGrant = true;
-    for (int r : grantResults) {
-      if (r == PackageManager.PERMISSION_DENIED) {
-        didPermissionGrant = false;
-        break;
-      }
-    }
-    synchronized (semaphore) {
-      semaphore.put("result_" + requestCode, didPermissionGrant ? "grant" : "denied");
-    }
-
     synchronized (CordovaGoogleMaps.semaphore) {
       semaphore.notify();
     }
@@ -360,7 +353,12 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
       callbackContext.success();
       return;
     }
-    mPluginLayout.isSuspended = false;
+    if (mPluginLayout.isSuspended) {
+      mPluginLayout.isSuspended = false;
+      synchronized (mPluginLayout.timerLock) {
+        mPluginLayout.timerLock.notify();
+      }
+    }
     callbackContext.success();
   }
   public void clearHtmlElements(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
@@ -400,32 +398,20 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
     final boolean isHigh = isHighLocal;
 
     // Request geolocation permission.
-    boolean locationPermission;
-    try {
-      Method hasPermission = CordovaInterface.class.getDeclaredMethod("hasPermission", String.class);
+    boolean locationPermission = cordova.hasPermission("android.permission.ACCESS_COARSE_LOCATION");
 
-      String permission = "android.permission.ACCESS_COARSE_LOCATION";
-      locationPermission = (Boolean) hasPermission.invoke(cordova, permission);
-    } catch (Exception e) {
-      PluginResult result;
-      result = new PluginResult(PluginResult.Status.ILLEGAL_ACCESS_EXCEPTION);
-      callbackContext.sendPluginResult(result);
-      return;
-    }
-
-    Log.d(TAG, "---> getMyLocation, hasPermission =  " + locationPermission);
     if (!locationPermission) {
       //_saveArgs = args;
       //_saveCallbackContext = callbackContext;
-      requestPermissions(CordovaGoogleMaps.this, callbackContext.hashCode(), new String[]{"android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION"});
       synchronized (semaphore) {
+        cordova.requestPermissions(this, callbackContext.hashCode(), new String[]{"android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION"});
         try {
           semaphore.wait();
         } catch (InterruptedException e) {
           e.printStackTrace();
         }
       }
-      locationPermission = "grant".equals(CordovaGoogleMaps.semaphore.remove("result_" + callbackContext.hashCode()));
+      locationPermission = cordova.hasPermission("android.permission.ACCESS_COARSE_LOCATION");
 
       if (!locationPermission) {
         callbackContext.error("Geolocation permission request was denied.");
@@ -729,7 +715,24 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
         mPluginLayout.HTMLNodes.remove(mapId);
         pluginMap = null;
       }
+
+      try {
+        Field pluginMapField = pluginManager.getClass().getDeclaredField("pluginMap");
+        pluginMapField.setAccessible(true);
+        LinkedHashMap<String, CordovaPlugin> pluginMapInstance = (LinkedHashMap<String, CordovaPlugin>) pluginMapField.get(pluginManager);
+        pluginMapInstance.remove(mapId);
+        Field entryMapField = pluginManager.getClass().getDeclaredField("entryMap");
+        entryMapField.setAccessible(true);
+        LinkedHashMap<String, PluginEntry> entryMapInstance = (LinkedHashMap<String, PluginEntry>) entryMapField.get(pluginManager);
+        entryMapInstance.remove(mapId);
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
+
+
     }
+
+
 
     System.gc();
     Runtime.getRuntime().gc();
@@ -750,6 +753,13 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
 
     PluginEntry pluginEntry = new PluginEntry(mapId, pluginMap);
     pluginManager.addService(pluginEntry);
+
+    if (mPluginLayout.isSuspended) {
+      mPluginLayout.isSuspended = false;
+      synchronized (mPluginLayout.timerLock) {
+        mPluginLayout.timerLock.notify();
+      }
+    }
 
     pluginMap.getMap(args, callbackContext);
   }
@@ -871,6 +881,19 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
   @Override
   public void onResume(boolean multitasking) {
     super.onResume(multitasking);
+    if (mPluginLayout != null) {
+      mPluginLayout.isSuspended = false;
+
+      if (mPluginLayout.pluginMaps.size() > 0) {
+        this.activity.runOnUiThread(new Runnable() {
+          @Override
+          public void run() {
+            CURRENT_URL = webView.getUrl();
+            webView.loadUrl("javascript:if(window.cordova){cordova.fireDocumentEvent('plugin_touch', {});}");
+          }
+        });
+      }
+    }
 
     cordova.getThreadPool().submit(new Runnable() {
       @Override
@@ -920,21 +943,41 @@ public class CordovaGoogleMaps extends CordovaPlugin implements ViewTreeObserver
     callbackContext.sendPluginResult(pluginResult);
   }
 
-  /**
+ /**
    * Called by the system when the device configuration changes while your activity is running.
    *
    * @param newConfig		The new device configuration
    */
-  /*
   public void onConfigurationChanged(Configuration newConfig) {
     super.onConfigurationChanged(newConfig);
-// Checks the orientation of the screen
+
+    Handler handler = new Handler();
+    handler.postDelayed(new Runnable() {
+      @Override
+      public void run() {
+        PluginMap pluginMap;
+        Collection<PluginEntry> collection =  pluginManager.getPluginEntries();
+        for (PluginEntry entry: collection) {
+          if ("plugin.google.maps.PluginMap".equals(entry.pluginClass) && entry.plugin != null) {
+            pluginMap = (PluginMap)entry.plugin;
+            if (pluginMap.map != null) {
+
+              // Trigger the CAMERA_MOVE_END mandatory
+              pluginMap.onCameraIdle();
+            }
+          }
+        }
+      }
+    }, 500);
+
+    /*
+    // Checks the orientation of the screen
     if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
       Toast.makeText(activity, "landscape", Toast.LENGTH_SHORT).show();
     } else if (newConfig.orientation == Configuration.ORIENTATION_PORTRAIT){
       Toast.makeText(activity, "portrait", Toast.LENGTH_SHORT).show();
     }
+    */
   }
-  */
 
 }

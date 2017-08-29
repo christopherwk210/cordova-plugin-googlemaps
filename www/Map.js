@@ -7,7 +7,8 @@ var argscheck = require('cordova/argscheck'),
     LatLng = require('./LatLng'),
     LatLngBounds = require('./LatLngBounds'),
     MapTypeId = require('./MapTypeId'),
-    event = require('./event');
+    event = require('./event'),
+    VisibleRegion = require('./VisibleRegion');
 
 var Marker = require('./Marker');
 var Circle = require('./Circle');
@@ -17,6 +18,7 @@ var TileOverlay = require('./TileOverlay');
 var GroundOverlay = require('./GroundOverlay');
 var KmlOverlay = require('./KmlOverlay');
 var CameraPosition = require('./CameraPosition');
+var MarkerCluster = require('./MarkerCluster');
 
 
 /**
@@ -41,6 +43,7 @@ var Map = function(id, _exec) {
         value: id,
         writable: false
     });
+    this._isReady = false;
 
     self.on("active_marker_id_changed", function(prevId, newId) {
         if (prevId in self.MARKERS) {
@@ -179,6 +182,7 @@ Map.prototype.getMap = function(mapId, div, options) {
       //------------------------------------------------------------------------
       setTimeout(function() {
         self.refreshLayout();
+        self._isReady = true;
         self.trigger(event.MAP_READY, self);
       }, 250);
     }, self.errorHandler, 'CordovaGoogleMaps', 'getMap', args, {sync: true});
@@ -246,14 +250,15 @@ Map.prototype.clear = function(callback) {
 
     var clearObj = function(obj) {
         var ids = Object.keys(obj);
-        var id;
+        var id, instance;
         for (var i = 0; i < ids.length; i++) {
             id = ids[i];
-            if (obj[id]) {
-              if (obj[id].type === "MarkerCluster") {
-                obj[id].remove();
+            instance = obj[id];
+            if (instance) {
+              if (instance.type === "MarkerCluster") {
+                instance.remove();
               }
-              obj[id].off();
+              instance.off();
               delete obj[id];
             }
         }
@@ -504,6 +509,7 @@ Map.prototype.getCameraPosition = function() {
  */
 Map.prototype.remove = function(callback) {
     var self = this;
+    self._isReady = false;
     var div = this.get('div');
     if (div) {
         while (div) {
@@ -520,8 +526,8 @@ Map.prototype.remove = function(callback) {
         }
     }
     self.set('div', undefined);
+    self.trigger("remove");
     exec(function() {
-        self.trigger("remove");
         if (typeof callback === "function") {
             callback.call(self);
         }
@@ -618,18 +624,19 @@ Map.prototype.getVisibleRegion = function(callback) {
     return null;
   }
 
-  var latLngBounds = new LatLngBounds(cameraPosition.northeast, cameraPosition.southwest);
+  var latLngBounds = new VisibleRegion(
+    cameraPosition.southwest,
+    cameraPosition.northeast,
+    cameraPosition.farLeft,
+    cameraPosition.farRight,
+    cameraPosition.nearLeft,
+    cameraPosition.nearRight
+  );
 
   if (typeof callback === "function") {
      console.log("[deprecated] getVisibleRegion() is changed. Please check out the https://goo.gl/yHstHQ");
      callback.call(self, latLngBounds);
   }
-
-  latLngBounds.nearLeft = new LatLng(cameraPosition.nearLeft.lat, cameraPosition.nearLeft.lng);
-  latLngBounds.nearRight = new LatLng(cameraPosition.nearRight.lat, cameraPosition.nearRight.lng);
-  latLngBounds.farLeft = new LatLng(cameraPosition.farLeft.lat, cameraPosition.farLeft.lng);
-  latLngBounds.farRight = new LatLng(cameraPosition.farRight.lat, cameraPosition.farRight.lng);
-
   return latLngBounds;
 };
 
@@ -959,6 +966,87 @@ Map.prototype.addMarker = function(markerOptions, callback) {
 };
 
 
+//------------------
+// Marker cluster
+//------------------
+Map.prototype.addMarkerCluster = function(markerClusterOptions, callback) {
+  var self = this;
+  if (typeof markerClusterOptions === "function") {
+    callback = markerClusterOptions;
+    markerClusterOptions = null;
+  }
+  markerClusterOptions = markerClusterOptions || {};
+  var positionList = markerClusterOptions.markers.map(function(marker) {
+    return marker.position;
+  });
+
+  exec(function(result) {
+
+    var markerMap = {};
+    result.geocellList.forEach(function(geocell, idx) {
+      var markerOptions = markerClusterOptions.markers[idx];
+      markerOptions = common.markerOptionsFilter(markerOptions);
+
+      var markerId = markerOptions.id || "marker_" + idx;
+      markerId = result.id + "-" + markerId;
+      markerOptions.id = markerId;
+      markerOptions._cluster = {
+        isRemoved: false,
+        isAdded: false,
+        geocell: geocell,
+        _marker: null
+      };
+/*
+      var marker = new Marker(self, markerId, markerOptions, "MarkerCluster", exec);
+      marker.set("isAdded", false, true);
+      marker.set("geocell", geocell, true);
+      marker.set("position", markerOptions.position, true);
+      marker.getId = function() {
+        return result.id + "-" + markerId;
+      };
+*/
+      markerMap[markerId] = markerOptions;
+
+      //self.MARKERS[marker.getId()] = marker;
+      //self.OVERLAYS[marker.getId()] = marker;
+    });
+
+    var markerCluster = new MarkerCluster(self, result.id, {
+      "icons": markerClusterOptions.icons,
+      "markerMap": markerMap,
+      "maxZoomLevel": Math.min(markerClusterOptions.maxZoomLevel || 15, 18),
+      "debug": markerClusterOptions.debug === true,
+      "boundsDraw": common.defaultTrueOption(markerClusterOptions.boundsDraw)
+    }, exec);
+    markerCluster.one("remove", function() {
+      delete self.OVERLAYS[result.id];
+/*
+      result.geocellList.forEach(function(geocell, idx) {
+        var markerOptions = markerClusterOptions.markers[idx];
+        var markerId = result.id + "-" + (markerOptions.id || "marker_" + idx);
+        var marker = self.MARKERS[markerId];
+        if (marker) {
+          marker.off();
+        }
+        //delete self.MARKERS[markerId];
+        delete self.OVERLAYS[markerId];
+      });
+*/
+      markerCluster.destroy();
+    });
+
+    self.OVERLAYS[result.id] = markerCluster;
+
+    if (typeof callback === "function") {
+        callback.call(self, markerCluster);
+    }
+  }, self.errorHandler, self.id, 'loadPlugin', ['MarkerCluster', {
+    "positionList": positionList,
+    "debug": markerClusterOptions.debug === true
+  }]);
+
+};
+
 /*****************************************************************************
  * Callbacks from the native side
  *****************************************************************************/
@@ -968,6 +1056,9 @@ Map.prototype._onSyncInfoWndPosition = function(eventName, points) {
 };
 
 Map.prototype._onMapEvent = function(eventName) {
+    if (!this._isReady) {
+      return;
+    }
     var args = [eventName];
     for (var i = 1; i < arguments.length; i++) {
         args.push(arguments[i]);
@@ -1117,6 +1208,8 @@ Map.prototype._onCameraEvent = function(eventName, cameraPosition) {
     this.set('camera_nearRight', cameraPosition.nearRight);
     this.set('camera_farLeft', cameraPosition.farLeft);
     this.set('camera_farRight', cameraPosition.farRight);
-    this.trigger(eventName, cameraPosition, this);
+    if (this._isReady) {
+      this.trigger(eventName, cameraPosition, this);
+    }
 };
 module.exports = Map;

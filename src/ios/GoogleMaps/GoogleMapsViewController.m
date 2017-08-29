@@ -19,12 +19,14 @@
     self.plugins = [NSMutableDictionary dictionary];
     self.isFullScreen = NO;
     self.screenSize = [[UIScreen mainScreen] bounds];
+    self.screenScale = [[UIScreen mainScreen] scale];
     self.clickable = YES;
     self.isRenderedAtOnce = NO;
     self.mapDivId = nil;
-    self.objects = [NSMutableDictionary dictionary];
+    self.objects = [[NSMutableDictionary alloc] init];
     self.executeQueue =  [NSOperationQueue new];
     self.executeQueue.maxConcurrentOperationCount = 10;
+
 
     return self;
 }
@@ -374,6 +376,7 @@
     }
     [self triggerClusterEvent:@"cluster_click" marker:marker];
   } else {
+    [self execJS:@"javascript:if(window.cordova){cordova.fireDocumentEvent('plugin_touch', {});}"];
     [self triggerMarkerEvent:@"marker_click" marker:marker];
     //NSLog(@"--->activeMarker = %@", marker.userData);
     self.map.selectedMarker = marker;
@@ -488,13 +491,15 @@
   GMSVisibleRegion visibleRegion = self.map.projection.visibleRegion;
   GMSCoordinateBounds *bounds = [[GMSCoordinateBounds alloc] initWithRegion:visibleRegion];
   NSMutableDictionary *northeast = [NSMutableDictionary dictionary];
+  NSMutableDictionary *southwest = [NSMutableDictionary dictionary];
+
   [northeast setObject:[NSNumber numberWithFloat:bounds.northEast.latitude] forKey:@"lat"];
   [northeast setObject:[NSNumber numberWithFloat:bounds.northEast.longitude] forKey:@"lng"];
   [json setObject:northeast forKey:@"northeast"];
-  NSMutableDictionary *southwest = [NSMutableDictionary dictionary];
   [southwest setObject:[NSNumber numberWithFloat:bounds.southWest.latitude] forKey:@"lat"];
   [southwest setObject:[NSNumber numberWithFloat:bounds.southWest.longitude] forKey:@"lng"];
   [json setObject:southwest forKey:@"southwest"];
+
 
 
   NSMutableDictionary *farLeft = [NSMutableDictionary dictionary];

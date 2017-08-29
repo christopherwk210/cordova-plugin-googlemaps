@@ -8,6 +8,7 @@
 
 #import <Cordova/CDV.h>
 #import <UIKit/UIKit.h>
+#import <math.h>
 #import "PluginUtil.h"
 #import "NSData+Base64.h"
 #import "MyPlgunProtocol.h"
@@ -20,6 +21,7 @@
 @property (nonatomic) BOOL isFullScreen;
 @property (nonatomic) BOOL isDragging;
 @property (nonatomic) CGRect screenSize;
+@property (nonatomic) CGFloat screenScale;
 @property (nonatomic) BOOL debuggable;
 @property (nonatomic) NSString *mapId;
 @property (nonatomic, strong) GMSMapView* map;
@@ -27,7 +29,7 @@
 @property (nonatomic) BOOL isRenderedAtOnce;
 @property (nonatomic) GMSMarker* activeMarker;
 @property (nonatomic, readwrite, strong) NSString *mapDivId;
-@property (atomic, strong) NSMutableDictionary* objects;
+@property (nonatomic, strong) NSMutableDictionary* objects;
 @property (atomic, strong) NSOperationQueue *executeQueue;
 
 
