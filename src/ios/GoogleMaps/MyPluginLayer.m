@@ -326,7 +326,7 @@ BOOL hasCordovaStatusBar = NO;  // YES if the app has cordova-plugin-statusbar
     if (hasCordovaStatusBar) {
         UIApplication* app = [UIApplication sharedApplication];
         if (app.isStatusBarHidden) {
-            point.y -= 20 * zoomScale;
+            // point.y -= 20 * zoomScale;
         }
     }
 
